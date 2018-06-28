@@ -1,8 +1,12 @@
 # clipfile_saver
 クリップボードをリアルタイムで監視して、画像が貼られたら任意のフォルダに連番保存するソフト
 
+・pythonソースから起動する場合
+
 clipframe.pyとclipfile_saver.pyを同じフォルダに置いてください。
 clipfile_saver.pyを実行すると起動します。
+
+・pythonが入っていない場合
 
 clipfile_saver.exeは単体で動作します。
 
