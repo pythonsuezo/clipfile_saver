@@ -185,9 +185,12 @@ class Mainframe( clipframe.MyFrame1 ):
         return
 
     def ExitHandler( self, event ):
-        dlg = wx.MessageDialog( None, 'クリップ画像保存器を終了します。\nよろしいですか？',
-                            "クリップ画像保存器", style = wx.YES_NO )
-        result = dlg.ShowModal()        #ダイアログの表示
+        # dlg = wx.MessageDialog( None, 'クリップ画像保存器を終了します。\nよろしいですか？',
+        #                     "クリップ画像保存器", style = wx.YES_NO )
+        # result = dlg.ShowModal()        #ダイアログの表示
+
+        result = wx.ID_YES                      # 閉じる時の確認要らない
+
         if result == wx.ID_YES:              #はいを押した時終了
             threadevent.set()
             conf.set("save","name",self.m_textCtrl1.GetValue())
