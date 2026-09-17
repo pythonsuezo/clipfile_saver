@@ -5,8 +5,32 @@ import types
 import unittest
 
 # clipfile_saver を import できるように依存をモックする
-for name in ("wx", "wx.xrc", "clipframe", "PIL", "PIL.ImageGrab", "PIL.Image", "winsound"):
+for name in ("wx", "wx.xrc", "wx.adv", "clipframe", "PIL", "PIL.ImageGrab", "PIL.Image", "winsound"):
     sys.modules.setdefault(name, types.ModuleType(name))
+
+wx = sys.modules["wx"]
+wx.MOD_CONTROL = 1
+wx.MOD_ALT = 2
+wx.ID_ANY = -1
+wx.OK = 4
+wx.ICON_ERROR = 512
+wx.NewId = lambda: 1
+wx.Frame = type("Frame", (), {})
+wx.Menu = type("Menu", (), {})
+wx.Icon = type("Icon", (), {})
+wx.ArtProvider = type("ArtProvider", (), {"GetBitmap": staticmethod(lambda *a, **k: None)})
+wx.ART_INFORMATION = 0
+wx.ART_OTHER = 0
+wx.StaticText = type("StaticText", (), {})
+wx.MessageDialog = type("MessageDialog", (), {})
+wx.EVT_HOTKEY = object()
+wx.EVT_ICONIZE = object()
+wx.EVT_MENU = object()
+wx.CallAfter = lambda *a, **k: None
+
+wxadv = sys.modules["wx.adv"]
+wxadv.TaskBarIcon = type("TaskBarIcon", (), {})
+wxadv.EVT_TASKBAR_LEFT_DCLICK = object()
 
 sys.modules["clipframe"].MyFrame1 = type("MyFrame1", (), {})
 sys.modules["PIL.ImageGrab"].grabclipboard = lambda: None
