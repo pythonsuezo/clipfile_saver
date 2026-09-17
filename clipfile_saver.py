@@ -22,11 +22,54 @@ INI     : 設定ファイルの場所
 
 path = os.path.dirname( sys.argv[0] )
 INI = path + "/INI.conf"
-conf = configparser.SafeConfigParser()
+# Python 3.12 で削除された SafeConfigParser の代わりに ConfigParser を使う
+conf = configparser.ConfigParser()
 
 now = datetime.datetime.now()
 today = now.strftime( "%Y/%m/%d" )          # 日付 YYYY/MM/DD
 now = now.strftime( "%H:%M:%S" )            # 時刻 HH:MM:SS
+
+# Windowsでフォルダ名に使えない文字・予約名
+INVALID_FOLDER_CHARS = '<>:"/\\|?*'
+WINDOWS_RESERVED_NAMES = frozenset([
+    "CON", "PRN", "AUX", "NUL",
+    "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+    "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+])
+
+def validate_folder_name( name ):
+    """サブフォルダ名を検証する。問題なければ正規化した名前、ダメなら (None, 理由)。"""
+    if name is None:
+        return None, "サブフォルダ名を入力してください。"
+
+    name = name.strip()
+    if not name:
+        return None, "サブフォルダ名を入力してください。"
+
+    if name in ( ".", ".." ):
+        return None, "「.」や「..」はフォルダ名に使えません。"
+
+    bad = sorted( set( c for c in name if c in INVALID_FOLDER_CHARS or ord( c ) < 32 ) )
+    if bad:
+        shown = " ".join( repr( c )[1:-1] for c in bad )
+        return None, (
+            "フォルダ名に使えない文字が含まれています。\n"
+            "使えない文字: < > : \" / \\ | ? * および制御文字\n"
+            "検出: " + shown
+        )
+
+    if name.endswith( "." ) or name.endswith( " " ):
+        return None, "フォルダ名の末尾にスペースや「.」は使えません。"
+
+    # CON.txt のような予約名も弾く
+    stem = name.split( "." )[0].upper()
+    if name.upper() in WINDOWS_RESERVED_NAMES or stem in WINDOWS_RESERVED_NAMES:
+        return None, "「%s」はWindowsの予約名のため使えません。" % name
+
+    if len( name ) > 200:
+        return None, "フォルダ名が長すぎます（200文字以内）。"
+
+    return name, None
 
 class Mainframe( clipframe.MyFrame1 ):
     def __init__( self, parent ):
@@ -165,16 +208,38 @@ class Mainframe( clipframe.MyFrame1 ):
             new_file = "00000"
         return dir + "/" + file_name + new_file + ".jpg", new_file
 
+    def ShowError( self, message ):
+        dlg = wx.MessageDialog( self, message, "クリップ画像保存器", style=wx.OK|wx.ICON_ERROR )
+        dlg.ShowModal()
+        dlg.Destroy()
+
     def Make_Dir(self, event):
         m_folder = self.m_textCtrl2.GetValue()
-        new_folder = self.m_comboBox1.GetValue()
-        new_path = os.path.join(m_folder,new_folder)
-        print(new_path)
-        # １文字でも入力していて入力したフォルダが存在しない時にフォルダを作成
-        if not os.path.isdir(new_path) or not len(new_folder):
-            os.mkdir(new_path)
-            self.SetCombo(m_folder)
-            self.m_comboBox1.SetValue(new_folder)
+        new_folder, err = validate_folder_name( self.m_comboBox1.GetValue() )
+        if err:
+            self.ShowError( err )
+            return
+
+        if not os.path.isdir( m_folder ):
+            self.ShowError( "親フォルダが存在しません。\n先に親フォルダを選択してください。" )
+            return
+
+        new_path = os.path.join( m_folder, new_folder )
+        print( new_path )
+
+        if os.path.isdir( new_path ):
+            # 既存ならコンボを合わせるだけ
+            self.m_comboBox1.SetValue( new_folder )
+            return
+
+        try:
+            os.mkdir( new_path )
+        except OSError as e:
+            self.ShowError( "フォルダを作成できませんでした。\n%s" % e )
+            return
+
+        self.SetCombo( m_folder )
+        self.m_comboBox1.SetValue( new_folder )
 
     def SetCombo(self, dir):
         files = os.listdir(dir)
@@ -203,9 +268,10 @@ class Mainframe( clipframe.MyFrame1 ):
         else:                           #いいえの時は何もしない
             return
 
-thread = Thread(target=Mainframe)
 threadevent = Event()
-app = wx.App( False )
-frame = Mainframe( None )
-frame.Show( True )
-app.MainLoop()
+
+if __name__ == "__main__":
+    app = wx.App( False )
+    frame = Mainframe( None )
+    frame.Show( True )
+    app.MainLoop()
