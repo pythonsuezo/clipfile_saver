@@ -53,6 +53,16 @@ HOTKEY_MOD = wx.MOD_CONTROL | wx.MOD_ALT
 HOTKEY_KEY = ord( "S" )
 HOTKEY_LABEL = "Ctrl+Alt+S"
 
+# 拡張子表示名 -> (Pillow format, 既定拡張子)
+SAVE_FORMAT_CHOICES = (
+    ( ".jpg", "JPEG" ),
+    ( ".png", "PNG" ),
+    ( ".bmp", "BMP" ),
+    ( ".webp", "WEBP" ),
+)
+SAVE_FORMAT_BY_EXT = dict( SAVE_FORMAT_CHOICES )
+DEFAULT_SAVE_EXT = ".png"
+
 def validate_folder_name( name ):
     """サブフォルダ名を検証する。問題なければ正規化した名前、ダメなら (None, 理由)。"""
     if name is None:
@@ -108,6 +118,53 @@ def to_jpeg_compatible( im ):
     return im.convert( "RGB" )
 
 
+def normalize_save_ext( ext ):
+    """'.png' / 'PNG' / 'png' などを正規化。未知なら DEFAULT_SAVE_EXT。"""
+    if not ext:
+        return DEFAULT_SAVE_EXT
+    e = str( ext ).strip().lower()
+    if not e.startswith( "." ):
+        e = "." + e
+    if e == ".jpeg":
+        e = ".jpg"
+    if e in SAVE_FORMAT_BY_EXT:
+        return e
+    return DEFAULT_SAVE_EXT
+
+
+def prepare_image_for_format( im, fmt ):
+    """保存形式に合わせて画像モードを整える。PNG/WEBP は透明度を維持。"""
+    fmt = ( fmt or "PNG" ).upper()
+    if fmt == "JPEG":
+        return to_jpeg_compatible( im )
+    if fmt == "BMP":
+        # BMP は実質 RGB
+        return to_jpeg_compatible( im )
+    if fmt == "PNG":
+        if im.mode in ( "RGBA", "RGB", "L", "LA", "P" ):
+            return im
+        return im.convert( "RGBA" ) if "A" in im.getbands() else im.convert( "RGB" )
+    if fmt == "WEBP":
+        return im
+    return im
+
+
+def save_image( im, path, ext ):
+    """選択拡張子で画像を保存する。"""
+    ext = normalize_save_ext( ext )
+    fmt = SAVE_FORMAT_BY_EXT[ext]
+    prepared = prepare_image_for_format( im, fmt )
+    if fmt == "JPEG":
+        prepared.save( path, fmt, quality=99, optimize=True )
+    elif fmt == "PNG":
+        prepared.save( path, fmt, optimize=True )
+    elif fmt == "WEBP":
+        prepared.save( path, fmt, quality=95, method=4 )
+    else:
+        prepared.save( path, fmt )
+    return path
+
+
 class ClipTaskBarIcon( TaskBarIcon ):
     """通知領域アイコン。ダブルクリック／メニューから即保存できる。"""
 
@@ -154,9 +211,13 @@ class Mainframe( clipframe.MyFrame1 ):
         clipframe.MyFrame1.__init__( self, parent )
         self.tray = None
         self._hotkey_ok = False
+        self.m_formatChoice = None
+        saved_ext = DEFAULT_SAVE_EXT
 
         try:
             conf.read(INI)                  # 設定ファイルをロードする
+            if conf.has_option( "save", "ext" ):
+                saved_ext = normalize_save_ext( conf.get( "save", "ext" ) )
             if conf.has_option("save","folder"):
                 print("設定読み込み成功")
                 m_folder = conf.get("save","folder")
@@ -188,12 +249,12 @@ class Mainframe( clipframe.MyFrame1 ):
         except:
             print("設定ファイルがありません")
 
-        self._setup_quick_save_ui()
+        self._setup_quick_save_ui( saved_ext )
         self._setup_hotkey()
         self._setup_tray()
         self.Bind( wx.EVT_ICONIZE, self.OnIconize )
 
-    def _setup_quick_save_ui( self ):
+    def _setup_quick_save_ui( self, saved_ext=DEFAULT_SAVE_EXT ):
         # ボタン文言とツールチップでホットキーを案内
         self.m_button5.SetLabel( "クリップボードの画像を保存 (%s)" % HOTKEY_LABEL )
         self.m_button5.SetToolTip(
@@ -205,16 +266,40 @@ class Mainframe( clipframe.MyFrame1 ):
             "手動なら %s やトレイのダブルクリックが手軽です。" % HOTKEY_LABEL
         )
 
-        # 画面下部にショートカット案内を追加（FormBuilder を触らずに乗せる）
-        hint = wx.StaticText(
-            self.m_panel1, wx.ID_ANY,
-            "かんたん保存: %s ／ トレイアイコンをダブルクリック" % HOTKEY_LABEL
-        )
         sizer = self.m_panel1.GetSizer()
         if sizer is not None:
+            fmt_row = wx.BoxSizer( wx.HORIZONTAL )
+            fmt_label = wx.StaticText( self.m_panel1, wx.ID_ANY, "形式：" )
+            ext_labels = [ ext for ext, _fmt in SAVE_FORMAT_CHOICES ]
+            self.m_formatChoice = wx.Choice( self.m_panel1, wx.ID_ANY, choices=ext_labels )
+            saved_ext = normalize_save_ext( saved_ext )
+            try:
+                self.m_formatChoice.SetSelection( ext_labels.index( saved_ext ) )
+            except ValueError:
+                self.m_formatChoice.SetSelection( ext_labels.index( DEFAULT_SAVE_EXT ) )
+            self.m_formatChoice.SetToolTip(
+                "PNG / WEBP は透明度を保持します。\n"
+                "JPG / BMP は白背景に合成して保存します。"
+            )
+            fmt_row.Add( fmt_label, 0, wx.ALL | wx.ALIGN_CENTER_VERTICAL, 5 )
+            fmt_row.Add( self.m_formatChoice, 0, wx.ALL | wx.ALIGN_CENTER_VERTICAL, 5 )
+            sizer.Add( fmt_row, 0, wx.EXPAND, 0 )
+
+            hint = wx.StaticText(
+                self.m_panel1, wx.ID_ANY,
+                "かんたん保存: %s ／ トレイアイコンをダブルクリック" % HOTKEY_LABEL
+            )
             sizer.Add( hint, 0, wx.ALL | wx.ALIGN_CENTER_HORIZONTAL, 8 )
             self.m_panel1.Layout()
             self.Layout()
+
+    def GetSaveExt( self ):
+        if self.m_formatChoice is None:
+            return DEFAULT_SAVE_EXT
+        sel = self.m_formatChoice.GetSelection()
+        if sel == wx.NOT_FOUND:
+            return DEFAULT_SAVE_EXT
+        return normalize_save_ext( self.m_formatChoice.GetString( sel ) )
 
     def _setup_hotkey( self ):
         try:
@@ -324,8 +409,8 @@ class Mainframe( clipframe.MyFrame1 ):
 
         name = self.m_textCtrl1.GetValue().strip() or "pic_"
         try:
-            save_file = self.New_file( target, name )[0]
-            to_jpeg_compatible( im ).save( save_file, "JPEG", quality=99, optimize=True )
+            save_file = self.New_file( target, name, self.GetSaveExt() )[0]
+            save_image( im, save_file, self.GetSaveExt() )
             winsound.PlaySound( "SystemAsterisk", winsound.SND_ASYNC )
             print( save_file )
             return True
@@ -361,8 +446,8 @@ class Mainframe( clipframe.MyFrame1 ):
         # self.m_button1.Disable()
         while not threadevent.wait(0.5):
             im = ImageGrab.grabclipboard()
-            dir = self.m_textCtrl2.GetValue() + "/" + self.m_comboBox1.GetValue()
-            name = self.m_textCtrl1.GetValue()
+            dir = os.path.join( self.m_textCtrl2.GetValue(), self.m_comboBox1.GetValue() )
+            name = self.m_textCtrl1.GetValue().strip() or "pic_"
             if im == None:
                 continue
 
@@ -370,8 +455,11 @@ class Mainframe( clipframe.MyFrame1 ):
                 if imdelta.histogram() != im.histogram() or imdelta == None:
                     if isinstance( im, Image.Image ):
                         try:
-                            save_file = self.New_file(dir,name)[0]
-                            to_jpeg_compatible( im ).save(save_file,"JPEG",quality=99,optimize=True)
+                            if not os.path.isdir( dir ):
+                                continue
+                            ext = self.GetSaveExt()
+                            save_file = self.New_file( dir, name, ext )[0]
+                            save_image( im, save_file, ext )
                             winsound.PlaySound('SystemAsterisk', winsound.SND_ASYNC)
                             print("saved")
                             print(save_file)
@@ -387,21 +475,31 @@ class Mainframe( clipframe.MyFrame1 ):
         print("監視終了")
         threadevent.clear()
 
-    def New_file( self, dir, file_name ):
+    def New_file( self, dir, file_name, ext=None ):
         # ディレクトリのパスを受け取って最高値+1のファイル名を返す
         # 同名ファイルのナンバリング最高値を求める
+        ext = normalize_save_ext( ext if ext is not None else self.GetSaveExt() )
         dir_list = os.listdir(dir)     # フォルダの中身をリスト化
 
         if len(dir_list) == 0:          # ディレクトリ内にファイルがない場合は00000
-            return os.path.join( dir, file_name + "00000" + ".jpg" ), "00000"
+            return os.path.join( dir, file_name + "00000" + ext ), "00000"
 
-        if [s for s in dir_list if s.startswith(file_name)]:
-            max_num =  max([s for s in dir_list if s.startswith(file_name)]).split(".")[0]
-            max_num = re.sub(re.escape(file_name), r"", max_num)  # ファイル名を削除
-            new_file = "{0:05d}".format(int(max_num)+1)   # ファイル名に+1して５ケタでゼロサプレスする
+        matched = [s for s in dir_list if s.startswith(file_name)]
+        if matched:
+            # 拡張子を除いた stem の連番を見る
+            stems = []
+            for s in matched:
+                stem = os.path.splitext( s )[0]
+                num = re.sub( re.escape( file_name ), r"", stem )
+                if re.fullmatch( r"\d+", num ):
+                    stems.append( int( num ) )
+            if stems:
+                new_file = "{0:05d}".format( max( stems ) + 1 )
+            else:
+                new_file = "00000"
         else:
             new_file = "00000"
-        return os.path.join( dir, file_name + new_file + ".jpg" ), new_file
+        return os.path.join( dir, file_name + new_file + ext ), new_file
 
     def ShowError( self, message ):
         dlg = wx.MessageDialog( self, message, "クリップ画像保存器", style=wx.OK|wx.ICON_ERROR )
@@ -449,6 +547,7 @@ class Mainframe( clipframe.MyFrame1 ):
         conf.set("save","name",self.m_textCtrl1.GetValue())
         conf.set("save","s_folder",self.m_comboBox1.GetValue())
         conf.set("save","toggle",str(self.m_toggleBtn2.GetValue()))
+        conf.set("save","ext", self.GetSaveExt())
         if conf.has_option( "save", "folder" ) or self.m_textCtrl2.GetValue():
             folder = self.m_textCtrl2.GetValue()
             if os.path.isdir( folder ):
