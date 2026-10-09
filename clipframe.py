@@ -5,6 +5,7 @@
 ## http://www.wxformbuilder.org/
 ##
 ## PLEASE DO *NOT* EDIT THIS FILE!
+## (Patched: removed wxEXPAND+ALIGN combos that assert on modern wxPython)
 ###########################################################################
 
 import wx
@@ -58,13 +59,13 @@ class MyFrame1 ( wx.Frame ):
 		
 		self.m_staticText3 = wx.StaticText( self.m_panel1, wx.ID_ANY, u"保存先：", wx.DefaultPosition, wx.DefaultSize, 0 )
 		self.m_staticText3.Wrap( -1 )
-		bSizer8.Add( self.m_staticText3, 0, wx.ALL|wx.EXPAND|wx.ALIGN_CENTER_VERTICAL, 5 )
+		bSizer8.Add( self.m_staticText3, 0, wx.ALL|wx.ALIGN_CENTER_VERTICAL, 5 )
 		
 		self.m_textCtrl2 = wx.TextCtrl( self.m_panel1, wx.ID_ANY, u"保存先フォルダ", wx.DefaultPosition, wx.DefaultSize, wx.TE_READONLY )
-		bSizer8.Add( self.m_textCtrl2, 1, wx.ALL|wx.ALIGN_CENTER_VERTICAL|wx.EXPAND, 5 )
+		bSizer8.Add( self.m_textCtrl2, 1, wx.ALL|wx.EXPAND, 5 )
 		
 		
-		bSizer4.Add( bSizer8, 0, wx.EXPAND|wx.ALIGN_CENTER_HORIZONTAL, 5 )
+		bSizer4.Add( bSizer8, 0, wx.EXPAND, 5 )
 		
 		
 		bSizer2.Add( bSizer4, 0, wx.EXPAND, 5 )
@@ -107,7 +108,7 @@ class MyFrame1 ( wx.Frame ):
 		self.m_panel1.SetSizer( bSizer2 )
 		self.m_panel1.Layout()
 		bSizer2.Fit( self.m_panel1 )
-		bSizer1.Add( self.m_panel1, 1, wx.EXPAND|wx.ALIGN_CENTER_HORIZONTAL, 5 )
+		bSizer1.Add( self.m_panel1, 1, wx.EXPAND, 5 )
 		
 		
 		self.SetSizer( bSizer1 )
