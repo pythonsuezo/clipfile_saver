@@ -88,6 +88,26 @@ def validate_folder_name( name ):
     return name, None
 
 
+def to_jpeg_compatible( im ):
+    """
+    JPEG は透明度を扱えないので RGB に変換する。
+    RGBA / LA / パレット透過などは白背景に合成する。
+    """
+    if im is None:
+        return None
+
+    if im.mode == "RGB":
+        return im
+
+    if im.mode in ( "RGBA", "LA" ) or ( im.mode == "P" and "transparency" in getattr( im, "info", {} ) ):
+        rgba = im.convert( "RGBA" )
+        background = Image.new( "RGB", rgba.size, ( 255, 255, 255 ) )
+        background.paste( rgba, mask=rgba.split()[3] )
+        return background
+
+    return im.convert( "RGB" )
+
+
 class ClipTaskBarIcon( TaskBarIcon ):
     """通知領域アイコン。ダブルクリック／メニューから即保存できる。"""
 
@@ -305,7 +325,7 @@ class Mainframe( clipframe.MyFrame1 ):
         name = self.m_textCtrl1.GetValue().strip() or "pic_"
         try:
             save_file = self.New_file( target, name )[0]
-            im.save( save_file, "JPEG", quality=99, optimize=True )
+            to_jpeg_compatible( im ).save( save_file, "JPEG", quality=99, optimize=True )
             winsound.PlaySound( "SystemAsterisk", winsound.SND_ASYNC )
             print( save_file )
             return True
@@ -349,12 +369,15 @@ class Mainframe( clipframe.MyFrame1 ):
             else:
                 if imdelta.histogram() != im.histogram() or imdelta == None:
                     if isinstance( im, Image.Image ):
-                        save_file = self.New_file(dir,name)[0]
-                        im.save(save_file,"JPEG",quality=99,optimize=True)
-                        winsound.PlaySound('SystemAsterisk', winsound.SND_ASYNC)
-                        print("saved")
-                        print(save_file)
-                        imdelta = im
+                        try:
+                            save_file = self.New_file(dir,name)[0]
+                            to_jpeg_compatible( im ).save(save_file,"JPEG",quality=99,optimize=True)
+                            winsound.PlaySound('SystemAsterisk', winsound.SND_ASYNC)
+                            print("saved")
+                            print(save_file)
+                            imdelta = im
+                        except Exception as e:
+                            print("自動保存失敗:", e)
                     else:
                        pass
                 elif imdelta.histogram() == im.histogram() or im == None:
